@@ -12,7 +12,7 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 let currentModel = process.env.DEFAULT_MODEL || "copilot";
 let adminUser = null;
 
-/* ================= REDIS HELPER ================= */
+/* ================= REDIS ================= */
 
 async function redis(command, args = []) {
   const response = await axios.post(
@@ -48,7 +48,7 @@ async function getHistory(userId) {
   return messages.map(m => JSON.parse(m)).reverse();
 }
 
-/* ================= TELEGRAM HELPER ================= */
+/* ================= TELEGRAM ================= */
 
 async function sendMessage(chatId, text, markdown = false) {
   await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
@@ -65,10 +65,11 @@ async function sendTyping(chatId) {
   });
 }
 
-/* ================= MAIN HANDLER ================= */
+/* ================= MAIN ================= */
 
 export default async function handler(req, res) {
   cors()(req, res, async () => {
+
     if (req.method !== "POST") {
       return res.status(200).json({ status: "ok" });
     }
@@ -80,33 +81,29 @@ export default async function handler(req, res) {
 
     const chatId = message.chat.id;
     const userId = message.from.id;
-    const text = message.text;
+    const text = message.text.trim();
 
-    /* ===== /start ===== */
+    /* ===== START ===== */
+
     if (text === "/start") {
       const info = `
 🤖 *AI Telegram Bot*
 
-Bot ini pakai Magma API + Redis Session.
+Bot ini pakai Magma API + Redis session memory.
 
 📌 Commands:
-/login <password>  - Login admin
-/model <nama>      - Ganti model (admin)
-/reset             - Reset session
-
-🧠 Model tersedia:
-- copilot
-- gpt5
-- muslim
+/login <password>
+/model <copilot|gpt5|muslim>
+/reset
 
 Ketik apa saja buat mulai ngobrol.
       `;
-
       await sendMessage(chatId, info, true);
       return res.status(200).end();
     }
 
-    /* ===== /login ===== */
+    /* ===== LOGIN ===== */
+
     if (text.startsWith("/login")) {
       const pass = text.split(" ")[1];
 
@@ -120,7 +117,8 @@ Ketik apa saja buat mulai ngobrol.
       return res.status(200).end();
     }
 
-    /* ===== /model ===== */
+    /* ===== MODEL ===== */
+
     if (text.startsWith("/model")) {
       if (userId !== adminUser) {
         await sendMessage(chatId, "❌ Hanya admin yang bisa ganti model.");
@@ -139,46 +137,57 @@ Ketik apa saja buat mulai ngobrol.
       return res.status(200).end();
     }
 
-    /* ===== /reset ===== */
+    /* ===== RESET ===== */
+
     if (text === "/reset") {
       await redis("DEL", [`chat:${userId}`]);
       await sendMessage(chatId, "🗑 Session direset.");
       return res.status(200).end();
     }
 
-    /* ===== CHAT BIASA ===== */
+    /* ===== CHAT ===== */
 
     await sendTyping(chatId);
 
     try {
-      // ambil history
+
       const history = await getHistory(userId);
 
-      // gabung context
       let contextPrompt = history
         .map(m => `${m.role}: ${m.content}`)
         .join("\n");
 
       contextPrompt += `\nuser: ${text}`;
 
-      // simpan pesan user
+      // 🔥 Batasi panjang prompt (ANTI ERROR URL OVERFLOW)
+      if (contextPrompt.length > 3000) {
+        contextPrompt = contextPrompt.slice(-3000);
+      }
+
       await saveMessage(userId, "user", text);
 
-      const apiUrl = `https://magma-api.biz.id/ai/${currentModel}?prompt=${encodeURIComponent(contextPrompt)}`;
+      const apiUrl =
+        `https://magma-api.biz.id/ai/${currentModel}?prompt=` +
+        encodeURIComponent(contextPrompt);
 
       const response = await axios.get(apiUrl);
 
-      if (response.data.status) {
+      if (response.data && response.data.status) {
+
         const aiReply = response.data.result.response;
 
         await saveMessage(userId, "assistant", aiReply);
 
         await sendMessage(chatId, aiReply);
+
       } else {
         await sendMessage(chatId, "❌ API error.");
       }
 
     } catch (err) {
+
+      console.log("API ERROR:", err.response?.data || err.message);
+
       await sendMessage(chatId, "⚠️ Terjadi kesalahan.");
     }
 
