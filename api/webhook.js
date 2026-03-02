@@ -22,6 +22,29 @@ export default async function handler(req, res) {
     const chatId = message.chat.id;
     const text = message.text;
 
+    // ✅ START COMMAND
+    if (text === "/start") {
+      const info = `
+🤖 *AI Telegram Bot*
+
+Bot ini menggunakan API Magma AI.
+
+📌 Commands:
+/login <password>  - Login admin
+/model <nama>      - Ganti model (admin only)
+
+🧠 Model tersedia:
+- copilot
+- gpt5
+- muslim
+
+Ketik apa saja untuk mulai chat.
+      `;
+
+      await sendMessage(chatId, info, true);
+      return res.status(200).end();
+    }
+
     // Command login admin
     if (text.startsWith("/login")) {
       const pass = text.split(" ")[1];
@@ -52,6 +75,9 @@ export default async function handler(req, res) {
       return res.status(200).end();
     }
 
+    // 🔥 Typing status sebelum AI jawab
+    await sendTyping(chatId);
+
     // Chat biasa
     try {
       const apiUrl = `https://magma-api.biz.id/ai/${currentModel}?prompt=${encodeURIComponent(text)}`;
@@ -70,9 +96,17 @@ export default async function handler(req, res) {
   });
 }
 
-async function sendMessage(chatId, text) {
+async function sendMessage(chatId, text, markdown = false) {
   await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     chat_id: chatId,
-    text: text
+    text: text,
+    parse_mode: markdown ? "Markdown" : undefined
+  });
+}
+
+async function sendTyping(chatId) {
+  await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendChatAction`, {
+    chat_id: chatId,
+    action: "typing"
   });
 }
