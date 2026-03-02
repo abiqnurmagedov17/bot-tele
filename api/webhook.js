@@ -12,12 +12,12 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 let currentModel = process.env.DEFAULT_MODEL || "copilot";
 let adminUser = null;
 
-/* ================= REDIS ================= */
+/* ================= REDIS FIX ================= */
 
 async function redis(command, args = []) {
   const response = await axios.post(
-    REDIS_URL,
-    { command: [command, ...args] },
+    `${REDIS_URL}/${command}`,
+    args,
     {
       headers: {
         Authorization: `Bearer ${REDIS_TOKEN}`,
@@ -25,6 +25,7 @@ async function redis(command, args = []) {
       }
     }
   );
+
   return response.data.result;
 }
 
@@ -36,7 +37,7 @@ async function saveMessage(userId, role, content) {
     JSON.stringify({ role, content })
   ]);
 
-  await redis("LTRIM", [key, 0, 9]); // max 10 pesan
+  await redis("LTRIM", [key, 0, 9]); // simpan max 10 pesan
 }
 
 async function getHistory(userId) {
@@ -165,7 +166,6 @@ Ketik apa saja buat mulai ngobrol.
 
       contextPrompt += `\nuser: ${text}`;
 
-      // Batasi panjang prompt biar URL aman
       if (contextPrompt.length > 2500) {
         contextPrompt = contextPrompt.slice(-2500);
       }
@@ -203,7 +203,6 @@ Ketik apa saja buat mulai ngobrol.
 
       console.log("API ERROR:", errorDetail);
 
-      // Admin lihat detail
       if (userId === adminUser) {
         await sendMessage(
           chatId,
@@ -212,7 +211,7 @@ Ketik apa saja buat mulai ngobrol.
       } else {
         await sendMessage(
           chatId,
-          "⚠️ Terjadi kesalahan. Silakan coba lagi."
+          "⚠️ Terjadi kesalahan."
         );
       }
     }
