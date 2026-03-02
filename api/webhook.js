@@ -51,6 +51,12 @@ async function getHistory(userId) {
 /* ================= TELEGRAM ================= */
 
 async function sendMessage(chatId, text, markdown = false) {
+  if (!text) return;
+
+  if (text.length > 3900) {
+    text = text.slice(0, 3900);
+  }
+
   await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     chat_id: chatId,
     text,
@@ -159,9 +165,9 @@ Ketik apa saja buat mulai ngobrol.
 
       contextPrompt += `\nuser: ${text}`;
 
-      // 🔥 Batasi panjang prompt (ANTI ERROR URL OVERFLOW)
-      if (contextPrompt.length > 3000) {
-        contextPrompt = contextPrompt.slice(-3000);
+      // Batasi panjang prompt biar URL aman
+      if (contextPrompt.length > 2500) {
+        contextPrompt = contextPrompt.slice(-2500);
       }
 
       await saveMessage(userId, "user", text);
@@ -181,14 +187,34 @@ Ketik apa saja buat mulai ngobrol.
         await sendMessage(chatId, aiReply);
 
       } else {
-        await sendMessage(chatId, "❌ API error.");
+        throw new Error(
+          response.data
+            ? JSON.stringify(response.data)
+            : "Unknown API response"
+        );
       }
 
     } catch (err) {
 
-      console.log("API ERROR:", err.response?.data || err.message);
+      const errorDetail =
+        err.response?.data
+          ? JSON.stringify(err.response.data)
+          : err.message;
 
-      await sendMessage(chatId, "⚠️ Terjadi kesalahan.");
+      console.log("API ERROR:", errorDetail);
+
+      // Admin lihat detail
+      if (userId === adminUser) {
+        await sendMessage(
+          chatId,
+          `🚨 DEBUG ERROR:\n${errorDetail}`
+        );
+      } else {
+        await sendMessage(
+          chatId,
+          "⚠️ Terjadi kesalahan. Silakan coba lagi."
+        );
+      }
     }
 
     res.status(200).end();
